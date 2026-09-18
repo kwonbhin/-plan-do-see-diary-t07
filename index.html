@@ -210,7 +210,7 @@
 
   .ppp-panel{
     margin-top:22px;
-    background:#F1ECDC;
+    background:#fff;
     border-radius:20px;
     flex:1;
     padding:28px 28px;
@@ -1221,7 +1221,11 @@
         .then(function(res){
           loaded = true;
           if (res.error){
-            itemsWrap.innerHTML = '<p class="empty-hint">불러오기 실패: ' + res.error.message + '</p>';
+            itemsWrap.innerHTML = '';
+            var errEl = document.createElement('p');
+            errEl.className = 'empty-hint';
+            errEl.textContent = '불러오기 실패: ' + res.error.message;
+            itemsWrap.appendChild(errEl);
             return;
           }
           allTodos = res.data;
@@ -1287,10 +1291,15 @@
 
     var meta = document.createElement('div');
     meta.className = 'plan-card-meta';
-    meta.innerHTML =
-      '기간 ' + formatDate(plan.period_start) + ' ~ ' + formatDate(plan.period_end) + '<br>' +
-      '성공 기준: ' + (plan.success_criteria || '-') + '<br>' +
-      '예상 시간: ' + (plan.estimated_minutes || 0) + '분';
+    var metaLine1 = document.createElement('div');
+    metaLine1.textContent = '기간 ' + formatDate(plan.period_start) + ' ~ ' + formatDate(plan.period_end);
+    var metaLine2 = document.createElement('div');
+    metaLine2.textContent = '성공 기준: ' + (plan.success_criteria || '-');
+    var metaLine3 = document.createElement('div');
+    metaLine3.textContent = '예상 시간: ' + (plan.estimated_minutes || 0) + '분';
+    meta.appendChild(metaLine1);
+    meta.appendChild(metaLine2);
+    meta.appendChild(metaLine3);
 
     var actions = document.createElement('div');
     actions.className = 'plan-card-actions';
