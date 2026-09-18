@@ -1,0 +1,126 @@
+{
+  "schema_name": "pds-schema-v2",
+  "description": "플랜두씨 다이어리 1 (과제6) 데이터베이스 계약서",
+  "database": "Supabase (PostgreSQL)",
+  "date_rule": {
+    "storage": "모든 timestamp 컬럼은 UTC(timestamptz)로 저장한다.",
+    "display": "화면 표시와 지연(overdue) 판정은 Asia/Seoul(UTC+9) 기준으로 변환해서 계산한다.",
+    "date_only_fields": "due_date, period_start, period_end 는 시간대 없는 date 타입이며, 사용자가 입력한 달력 날짜를 그대로 저장한다."
+  },
+  "tables": [
+    {
+      "name": "plans",
+      "purpose": "계획 (카드1)",
+      "columns": [
+        { "name": "id", "type": "uuid", "note": "primary key" },
+        { "name": "title", "type": "text" },
+        { "name": "period_start", "type": "date" },
+        { "name": "period_end", "type": "date" },
+        { "name": "priority", "type": "text", "enum": ["high", "medium", "low"] },
+        { "name": "success_criteria", "type": "text" },
+        { "name": "estimated_minutes", "type": "integer" },
+        { "name": "created_at", "type": "timestamptz" },
+        { "name": "updated_at", "type": "timestamptz" }
+      ],
+      "criteria": ["T06-C04", "T06-C05", "T06-C06", "T06-C07"]
+    },
+    {
+      "name": "plan_revisions",
+      "purpose": "계획 수정 이력 — update 직전 값을 트리거로 스냅샷 저장 (카드1)",
+      "columns": [
+        { "name": "id", "type": "uuid" },
+        { "name": "plan_id", "type": "uuid", "references": "plans.id" },
+        { "name": "title", "type": "text" },
+        { "name": "period_start", "type": "date" },
+        { "name": "period_end", "type": "date" },
+        { "name": "priority", "type": "text" },
+        { "name": "success_criteria", "type": "text" },
+        { "name": "estimated_minutes", "type": "integer" },
+        { "name": "revised_at", "type": "timestamptz" }
+      ],
+      "criteria": ["T06-C08"]
+    },
+    {
+      "name": "todos",
+      "purpose": "할 일 (카드2). 삭제는 소프트 삭제(deleted_at)로 처리",
+      "columns": [
+        { "name": "id", "type": "uuid" },
+        { "name": "plan_id", "type": "uuid", "references": "plans.id" },
+        { "name": "title", "type": "text" },
+        { "name": "content", "type": "text", "nullable": true },
+        { "name": "due_date", "type": "date", "nullable": true },
+        { "name": "priority", "type": "text", "enum": ["high", "medium", "low"], "nullable": true },
+        { "name": "tags", "type": "text[]" },
+        { "name": "estimated_minutes", "type": "integer", "nullable": true },
+        { "name": "status", "type": "text", "enum": ["todo", "done"] },
+        { "name": "completed_at", "type": "timestamptz", "nullable": true },
+        { "name": "completion_key", "type": "text", "note": "unique, 완료 처리 중복 방지 키" },
+        { "name": "deleted_at", "type": "timestamptz", "nullable": true, "note": "소프트 삭제" },
+        { "name": "created_at", "type": "timestamptz" },
+        { "name": "updated_at", "type": "timestamptz" }
+      ],
+      "criteria": ["T06-C09", "T06-C10", "T06-C11", "T06-C12", "T06-C13", "T06-C14", "T06-C15", "T06-C16", "T06-C17"]
+    },
+    {
+      "name": "execution_logs",
+      "purpose": "실제로 한 일 기록 (카드3). plans/todos 값을 절대 덮어쓰지 않는 별도 테이블",
+      "columns": [
+        { "name": "id", "type": "uuid" },
+        { "name": "todo_id", "type": "uuid", "references": "todos.id" },
+        { "name": "started_at", "type": "timestamptz" },
+        { "name": "ended_at", "type": "timestamptz" },
+        { "name": "actual_minutes", "type": "integer" },
+        { "name": "blocked_reason", "type": "text", "nullable": true },
+        { "name": "idempotency_key", "type": "text", "note": "unique, 이중 제출 방지" },
+        { "name": "created_at", "type": "timestamptz" }
+      ],
+      "criteria": ["T06-C23", "T06-C24", "T06-C25", "T06-C26", "T06-C27", "T06-C21", "T06-C22"]
+    },
+    {
+      "name": "review_notes",
+      "purpose": "돌아보기에서 다음 계획으로 넘기는 고칠 점 한 줄 (카드4)",
+      "columns": [
+        { "name": "id", "type": "uuid" },
+        { "name": "source_plan_id", "type": "uuid", "references": "plans.id", "nullable": true },
+        { "name": "note", "type": "text" },
+        { "name": "carried_to_plan_id", "type": "uuid", "references": "plans.id", "nullable": true },
+        { "name": "created_at", "type": "timestamptz" }
+      ],
+      "criteria": ["T06-C33"]
+    }
+  ],
+  "views": [
+    {
+      "name": "v_plan_review",
+      "purpose": "See 화면 집계 (카드4)",
+      "fields": [
+        "plan_id", "plan_title", "todo_count", "done_count",
+        "overdue_count", "blocked_count",
+        "estimated_minutes_sum", "actual_minutes_sum"
+      ],
+      "criteria": ["T06-C28", "T06-C29", "T06-C30", "T06-C31", "T06-C32", "T06-C83"]
+    }
+  ],
+  "functions": [
+    {
+      "name": "fn_complete_todo(p_todo_id uuid, p_completion_key text)",
+      "purpose": "할 일 완료 처리를 status <> 'done' 조건으로 가드하여 중복 완료를 막는다",
+      "criteria": ["T06-C21", "T06-C22"]
+    },
+    {
+      "name": "fn_reopen_todo(p_todo_id uuid)",
+      "purpose": "완료된 할 일을 다시 진행 중으로 되돌린다",
+      "criteria": ["T06-C12"]
+    }
+  ],
+  "relationships": [
+    "plans 1 --- N todos (plan_id)",
+    "plans 1 --- N plan_revisions (plan_id)",
+    "todos 1 --- N execution_logs (todo_id)",
+    "plans 1 --- N review_notes (source_plan_id / carried_to_plan_id)"
+  ],
+  "access_control": {
+    "current_stage": "과제6 — 로그인 없음, RLS 정책은 익명 키에 대해 전체 허용(using true / with check true)",
+    "future_stage": "과제7에서 인증 도입 후 RLS 정책을 사용자별로 제한할 예정"
+  }
+}
