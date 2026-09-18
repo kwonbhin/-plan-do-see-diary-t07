@@ -438,22 +438,152 @@
     padding:7px 9px;
   }
 
+  .todo-toggle-btn{
+    background:none;
+    border:none;
+    color:#666;
+    font-size:12.5px;
+    cursor:pointer;
+    padding:0;
+    text-decoration:underline;
+  }
+  .todo-section{
+    margin-top:12px;
+    padding-top:12px;
+    border-top:1px dashed #eee;
+    display:none;
+    flex-direction:column;
+    gap:12px;
+  }
+  .todo-section.show{ display:flex; }
+
+  .todo-toolbar{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .todo-toolbar input[type=text],
+  .todo-toolbar select{
+    font-family:inherit;
+    font-size:12.5px;
+    border:1px solid #ddd;
+    border-radius:8px;
+    padding:6px 8px;
+    background:#fff;
+  }
+  .todo-toolbar input[type=text]{ flex:1; min-width:100px; }
+  .todo-sort-note{ font-size:11px; color:#999; }
+
+  .todo-add-btn{
+    align-self:flex-start;
+    background:#F1ECDC;
+    color:#555;
+    border:none;
+    border-radius:8px;
+    padding:6px 12px;
+    font-size:12.5px;
+    font-weight:700;
+    cursor:pointer;
+  }
+
+  .todo-add-form{
+    display:none;
+    flex-direction:column;
+    gap:8px;
+    background:#FAF9F6;
+    border:1px solid #eee;
+    border-radius:10px;
+    padding:12px;
+  }
+  .todo-add-form.show{ display:flex; }
+  .todo-add-form input,
+  .todo-add-form select,
+  .todo-add-form textarea{
+    font-family:inherit;
+    font-size:13px;
+    border:1px solid #ddd;
+    border-radius:7px;
+    padding:7px 9px;
+  }
+  .todo-add-row{ display:flex; gap:8px; }
+  .todo-add-row > *{ flex:1; }
+  .todo-add-actions{ display:flex; gap:8px; justify-content:flex-end; }
+
+  .todo-items{ display:flex; flex-direction:column; gap:8px; }
+  .todo-item{
+    border:1px solid #eee;
+    border-radius:10px;
+    padding:10px 12px;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+  }
+  .todo-item.is-done{ opacity:.55; }
+  .todo-item-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:8px;
+  }
+  .todo-item-title{ font-size:13.5px; font-weight:700; color:#222; }
+  .todo-item-title.done{ text-decoration:line-through; }
+  .todo-item-meta{ font-size:11px; color:#999; display:flex; gap:8px; flex-wrap:wrap; }
+  .todo-tag{
+    background:#F1ECDC;
+    border-radius:10px;
+    padding:1px 7px;
+    font-size:10.5px;
+    color:#666;
+  }
+  .todo-item-actions{ display:flex; gap:10px; margin-top:2px; }
+  .todo-item-actions button{
+    background:none;
+    border:none;
+    color:#666;
+    font-size:11.5px;
+    cursor:pointer;
+    padding:0;
+    text-decoration:underline;
+  }
+
   .public-notice{
     position:fixed;
     top:0; left:0; right:0;
     z-index:9999;
-    background:#FFF3CE;
-    color:#5B4A18;
+    background:#F0F0F0;
+    color:#777;
     font-size:11.5px;
     text-align:center;
     padding:5px 10px;
     line-height:1.4;
+    transition:opacity .3s ease, transform .3s ease;
   }
+  .public-notice.is-hidden{
+    opacity:0;
+    transform:translateY(-100%);
+    pointer-events:none;
+  }
+
+  .home-link{
+    position:fixed;
+    top:24px; left:24px;
+    z-index:20;
+    font-size:13px;
+    font-weight:700;
+    color:#888;
+    cursor:pointer;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .3s ease;
+  }
+  .home-link.show{ opacity:1; pointer-events:auto; }
+  .home-link:hover{ color:#333; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 </head>
 <body>
-<div class="public-notice">지금은 로그인이 없어 링크를 아는 사람은 누구나 볼 수 있습니다. 남이 봐도 괜찮은 내용만 넣으세요</div>
+<div class="public-notice" id="publicNotice">지금은 로그인이 없어 링크를 아는 사람은 누구나 볼 수 있습니다. 남이 봐도 괜찮은 내용만 넣으세요</div>
+<div class="home-link" id="homeLink">← 처음으로</div>
 
 <div class="stage" id="stage">
 
@@ -798,13 +928,22 @@
     });
   });
 
+  var publicNotice = document.getElementById('publicNotice');
+  var homeLink = document.getElementById('homeLink');
+
   function goNext(){
     stage.classList.add('leaving');
     setT(function(){
       stage.style.display = 'none';
+      publicNotice.classList.add('is-hidden');
+      homeLink.classList.add('show');
       showMenu();
     }, 720);
   }
+
+  homeLink.addEventListener('click', function(){
+    location.reload();
+  });
 
   startBtn.addEventListener('click', function(e){
     e.stopPropagation();
@@ -905,6 +1044,231 @@
     return d;
   }
 
+  function priorityRank(p){ return p === 'high' ? 0 : p === 'medium' ? 1 : p === 'low' ? 2 : 3; }
+
+  function buildTodoSection(plan){
+    var section = document.createElement('div');
+    section.className = 'todo-section';
+
+    var toolbar = document.createElement('div');
+    toolbar.className = 'todo-toolbar';
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.placeholder = '할 일 검색';
+    var filterSelect = document.createElement('select');
+    filterSelect.innerHTML =
+      '<option value="all">전체 상태</option>' +
+      '<option value="todo">진행 중만</option>' +
+      '<option value="done">완료만</option>';
+    var sortSelect = document.createElement('select');
+    sortSelect.innerHTML =
+      '<option value="due_asc">마감일 빠른순</option>' +
+      '<option value="priority">우선순위순(높음→낮음)</option>' +
+      '<option value="created_desc">최근 생성순</option>';
+    toolbar.appendChild(searchInput);
+    toolbar.appendChild(filterSelect);
+    toolbar.appendChild(sortSelect);
+
+    var sortNote = document.createElement('div');
+    sortNote.className = 'todo-sort-note';
+
+    var addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'todo-add-btn';
+    addBtn.textContent = '+ 할 일 추가';
+
+    var addForm = document.createElement('div');
+    addForm.className = 'todo-add-form';
+    addForm.innerHTML =
+      '<input type="text" class="t-title" placeholder="할 일 제목">' +
+      '<textarea class="t-content" rows="2" placeholder="내용(선택)"></textarea>' +
+      '<div class="todo-add-row">' +
+        '<input type="date" class="t-due">' +
+        '<select class="t-priority">' +
+          '<option value="high">높음</option>' +
+          '<option value="medium" selected>보통</option>' +
+          '<option value="low">낮음</option>' +
+        '</select>' +
+      '</div>' +
+      '<div class="todo-add-row">' +
+        '<input type="text" class="t-tags" placeholder="태그(쉼표로 구분)">' +
+        '<input type="number" class="t-est" placeholder="예상 시간(분)" min="0">' +
+      '</div>' +
+      '<div class="todo-add-actions">' +
+        '<button type="button" class="btn-ghost t-cancel">취소</button>' +
+        '<button type="button" class="btn-primary t-save">저장</button>' +
+      '</div>';
+
+    var itemsWrap = document.createElement('div');
+    itemsWrap.className = 'todo-items';
+    itemsWrap.innerHTML = '<p class="empty-hint">불러오는 중…</p>';
+
+    section.appendChild(toolbar);
+    section.appendChild(sortNote);
+    section.appendChild(addBtn);
+    section.appendChild(addForm);
+    section.appendChild(itemsWrap);
+
+    var allTodos = [];
+    var loaded = false;
+
+    function renderTodoItem(t){
+      var item = document.createElement('div');
+      item.className = 'todo-item' + (t.status === 'done' ? ' is-done' : '');
+
+      var top = document.createElement('div');
+      top.className = 'todo-item-top';
+      var title = document.createElement('div');
+      title.className = 'todo-item-title' + (t.status === 'done' ? ' done' : '');
+      title.textContent = t.title;
+      var badge = document.createElement('div');
+      badge.className = 'plan-card-badge';
+      badge.textContent = PRIORITY_LABEL[t.priority] || '-';
+      top.appendChild(title);
+      top.appendChild(badge);
+
+      var meta = document.createElement('div');
+      meta.className = 'todo-item-meta';
+      var metaSpan = document.createElement('span');
+      metaSpan.textContent = '마감 ' + (t.due_date || '없음') + ' · 예상 ' + (t.estimated_minutes || 0) + '분';
+      meta.appendChild(metaSpan);
+      (t.tags || []).forEach(function(tag){
+        var tagEl = document.createElement('span');
+        tagEl.className = 'todo-tag';
+        tagEl.textContent = tag;
+        meta.appendChild(tagEl);
+      });
+
+      var actionsRow = document.createElement('div');
+      actionsRow.className = 'todo-item-actions';
+
+      if (t.status === 'done'){
+        var reopenBtn = document.createElement('button');
+        reopenBtn.type = 'button';
+        reopenBtn.textContent = '되돌리기';
+        reopenBtn.addEventListener('click', function(){
+          sb.rpc('fn_reopen_todo', { p_todo_id: t.id }).then(function(){ refresh(); });
+        });
+        actionsRow.appendChild(reopenBtn);
+      } else {
+        var doneBtn = document.createElement('button');
+        doneBtn.type = 'button';
+        doneBtn.textContent = '완료';
+        doneBtn.addEventListener('click', function(){
+          doneBtn.disabled = true;
+          var key = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (String(Date.now()) + Math.random());
+          sb.rpc('fn_complete_todo', { p_todo_id: t.id, p_completion_key: key }).then(function(){ refresh(); });
+        });
+        actionsRow.appendChild(doneBtn);
+      }
+
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.textContent = '삭제';
+      delBtn.addEventListener('click', function(){
+        if (!confirm('이 할 일을 지울까요?')) return;
+        sb.from('todos').update({ deleted_at: new Date().toISOString() }).eq('id', t.id).then(function(){ refresh(); });
+      });
+      actionsRow.appendChild(delBtn);
+
+      item.appendChild(top);
+      item.appendChild(meta);
+      item.appendChild(actionsRow);
+      return item;
+    }
+
+    function renderList(){
+      var q = searchInput.value.trim().toLowerCase();
+      var filterVal = filterSelect.value;
+      var sortVal = sortSelect.value;
+
+      var list = allTodos.filter(function(t){
+        if (filterVal === 'todo' && t.status !== 'todo') return false;
+        if (filterVal === 'done' && t.status !== 'done') return false;
+        if (q && t.title.toLowerCase().indexOf(q) === -1) return false;
+        return true;
+      });
+
+      if (sortVal === 'due_asc'){
+        list.sort(function(a,b){
+          if (!a.due_date) return 1;
+          if (!b.due_date) return -1;
+          return a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0;
+        });
+        sortNote.textContent = '정렬 기준: 마감일 빠른순 (마감일 없는 항목은 뒤로)';
+      } else if (sortVal === 'priority'){
+        list.sort(function(a,b){ return priorityRank(a.priority) - priorityRank(b.priority); });
+        sortNote.textContent = '정렬 기준: 우선순위 높음 → 낮음';
+      } else {
+        list.sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
+        sortNote.textContent = '정렬 기준: 최근 생성순';
+      }
+
+      itemsWrap.innerHTML = '';
+      if (!list.length){
+        itemsWrap.innerHTML = '<p class="empty-hint">표시할 할 일이 없어요.</p>';
+        return;
+      }
+      list.forEach(function(t){ itemsWrap.appendChild(renderTodoItem(t)); });
+    }
+
+    function refresh(){
+      itemsWrap.innerHTML = '<p class="empty-hint">불러오는 중…</p>';
+      sb.from('todos')
+        .select('*')
+        .eq('plan_id', plan.id)
+        .is('deleted_at', null)
+        .then(function(res){
+          loaded = true;
+          if (res.error){
+            itemsWrap.innerHTML = '<p class="empty-hint">불러오기 실패: ' + res.error.message + '</p>';
+            return;
+          }
+          allTodos = res.data;
+          renderList();
+        });
+    }
+
+    searchInput.addEventListener('input', renderList);
+    filterSelect.addEventListener('change', renderList);
+    sortSelect.addEventListener('change', renderList);
+
+    addBtn.addEventListener('click', function(){
+      addForm.classList.toggle('show');
+    });
+    addForm.querySelector('.t-cancel').addEventListener('click', function(){
+      addForm.classList.remove('show');
+    });
+    addForm.querySelector('.t-save').addEventListener('click', function(){
+      var titleVal = addForm.querySelector('.t-title').value.trim();
+      if (!titleVal){ alert('제목을 입력해주세요.'); return; }
+      var tagsVal = addForm.querySelector('.t-tags').value
+        .split(',').map(function(s){ return s.trim(); }).filter(function(s){ return s; });
+      var payload = {
+        plan_id: plan.id,
+        title: titleVal,
+        content: addForm.querySelector('.t-content').value.trim() || null,
+        due_date: addForm.querySelector('.t-due').value || null,
+        priority: addForm.querySelector('.t-priority').value,
+        tags: tagsVal,
+        estimated_minutes: addForm.querySelector('.t-est').value ? parseInt(addForm.querySelector('.t-est').value, 10) : 0
+      };
+      sb.from('todos').insert(payload).then(function(res){
+        if (res.error){ alert('저장 실패: ' + res.error.message); return; }
+        addForm.classList.remove('show');
+        addForm.querySelector('.t-title').value = '';
+        addForm.querySelector('.t-content').value = '';
+        addForm.querySelector('.t-due').value = '';
+        addForm.querySelector('.t-tags').value = '';
+        addForm.querySelector('.t-est').value = '';
+        refresh();
+      });
+    });
+
+    section._load = function(){ if (!loaded) refresh(); };
+    return section;
+  }
+
   function renderPlanCard(plan){
     var card = document.createElement('div');
     card.className = 'plan-card';
@@ -937,8 +1301,12 @@
     var histBtn = document.createElement('button');
     histBtn.type = 'button';
     histBtn.textContent = '수정 이력 보기';
+    var todoBtn = document.createElement('button');
+    todoBtn.type = 'button';
+    todoBtn.textContent = '할 일 관리';
     actions.appendChild(editBtn);
     actions.appendChild(histBtn);
+    actions.appendChild(todoBtn);
 
     var revList = document.createElement('div');
     revList.className = 'revision-list';
@@ -981,6 +1349,16 @@
     card.appendChild(meta);
     card.appendChild(actions);
     card.appendChild(revList);
+
+    var todoSection = buildTodoSection(plan);
+    todoBtn.addEventListener('click', function(){
+      var willShow = !todoSection.classList.contains('show');
+      todoSection.classList.toggle('show', willShow);
+      todoBtn.textContent = willShow ? '할 일 접기' : '할 일 관리';
+      if (willShow) todoSection._load();
+    });
+    card.appendChild(todoSection);
+
     return card;
   }
 
