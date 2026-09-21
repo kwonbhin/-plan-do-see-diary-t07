@@ -1426,6 +1426,14 @@
       var actionsRow = document.createElement('div');
       actionsRow.className = 'todo-item-actions';
 
+      var editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.textContent = '수정';
+      editBtn.addEventListener('click', function(){
+        section._openEditForm(t);
+      });
+      actionsRow.appendChild(editBtn);
+
       if (t.status === 'done'){
         var reopenBtn = document.createElement('button');
         reopenBtn.type = 'button';
@@ -1603,14 +1611,48 @@
     filterSelect.addEventListener('change', renderList);
     sortSelect.addEventListener('change', renderList);
 
+    var editingTodoId = null;
+    var saveBtn = addForm.querySelector('.t-save');
+
+    function resetForm(){
+      addForm.querySelector('.t-title').value = '';
+      addForm.querySelector('.t-content').value = '';
+      addForm.querySelector('.t-due').value = '';
+      addForm.querySelector('.t-priority').value = 'medium';
+      addForm.querySelector('.t-est').value = '';
+      selectedTags = [];
+      renderChips();
+      editingTodoId = null;
+      saveBtn.textContent = '저장';
+    }
+
+    function openEditForm(t){
+      editingTodoId = t.id;
+      addForm.querySelector('.t-title').value = t.title || '';
+      addForm.querySelector('.t-content').value = t.content || '';
+      addForm.querySelector('.t-due').value = t.due_date || '';
+      addForm.querySelector('.t-priority').value = t.priority || 'medium';
+      addForm.querySelector('.t-est').value = t.estimated_minutes || '';
+      selectedTags = (t.tags || []).slice();
+      renderChips();
+      saveBtn.textContent = '수정 저장';
+      addForm.classList.add('show');
+      addForm.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    }
+
     addBtn.addEventListener('click', function(){
-      addForm.classList.toggle('show');
-      if (addForm.classList.contains('show')) refreshKnownTags();
+      var willShow = !addForm.classList.contains('show');
+      if (willShow){
+        resetForm();
+        refreshKnownTags();
+      }
+      addForm.classList.toggle('show', willShow);
     });
     addForm.querySelector('.t-cancel').addEventListener('click', function(){
       addForm.classList.remove('show');
+      resetForm();
     });
-    addForm.querySelector('.t-save').addEventListener('click', function(){
+    saveBtn.addEventListener('click', function(){
       var titleVal = addForm.querySelector('.t-title').value.trim();
       if (!titleVal){ alert('제목을 입력해주세요.'); return; }
       var payload = {
@@ -1622,20 +1664,19 @@
         tags: selectedTags.slice(),
         estimated_minutes: addForm.querySelector('.t-est').value ? parseInt(addForm.querySelector('.t-est').value, 10) : 0
       };
-      sb.from('todos').insert(payload).then(function(res){
+      var req = editingTodoId
+        ? sb.from('todos').update(payload).eq('id', editingTodoId)
+        : sb.from('todos').insert(payload);
+      req.then(function(res){
         if (res.error){ alert('저장 실패: ' + res.error.message); return; }
         addForm.classList.remove('show');
-        addForm.querySelector('.t-title').value = '';
-        addForm.querySelector('.t-content').value = '';
-        addForm.querySelector('.t-due').value = '';
-        addForm.querySelector('.t-est').value = '';
-        selectedTags = [];
-        renderChips();
+        resetForm();
         refresh();
       });
     });
 
     section._load = function(){ if (!loaded) refresh(); };
+    section._openEditForm = openEditForm;
     return section;
   }
 
