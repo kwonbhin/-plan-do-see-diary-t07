@@ -507,6 +507,70 @@
   }
   .todo-add-row{ display:flex; gap:8px; }
   .todo-add-row > *{ flex:1; }
+
+  .tag-chip-container{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:6px;
+    border:1px solid #ddd;
+    border-radius:8px;
+    padding:6px 8px;
+    background:#fff;
+  }
+  .tag-chip{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    background:#F1ECDC;
+    border-radius:12px;
+    padding:3px 6px 3px 10px;
+    font-size:12px;
+    color:#555;
+  }
+  .tag-chip button{
+    background:none;
+    border:none;
+    cursor:pointer;
+    color:#999;
+    font-size:13px;
+    line-height:1;
+    padding:0 2px;
+  }
+  .tag-chip button:hover{ color:#C0392B; }
+  .tag-input-wrap{
+    position:relative;
+    flex:1;
+    min-width:100px;
+  }
+  .t-tag-input{
+    border:none !important;
+    outline:none;
+    font-size:13px;
+    width:100%;
+    padding:3px 2px !important;
+  }
+  .tag-suggest-dropdown{
+    position:absolute;
+    top:100%; left:0; right:0;
+    background:#fff;
+    border:1px solid #ddd;
+    border-radius:8px;
+    margin-top:4px;
+    max-height:150px;
+    overflow-y:auto;
+    box-shadow:0 4px 10px rgba(0,0,0,.08);
+    z-index:5;
+    display:none;
+  }
+  .tag-suggest-dropdown.show{ display:block; }
+  .tag-suggest-item{
+    padding:7px 10px;
+    font-size:12.5px;
+    color:#444;
+    cursor:pointer;
+  }
+  .tag-suggest-item:hover{ background:#F5F5F5; }
   .todo-add-actions{ display:flex; gap:8px; justify-content:flex-end; }
 
   .todo-items{ display:flex; flex-direction:column; gap:8px; }
@@ -545,6 +609,69 @@
     padding:0;
     text-decoration:underline;
   }
+
+  .do-item{
+    border:1px solid #eee;
+    border-radius:14px;
+    padding:14px 16px;
+    background:#fff;
+  }
+  .do-item-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:8px;
+  }
+  .do-item-title{ font-size:15px; font-weight:800; color:#222; }
+  .do-item-plan{ font-size:11.5px; color:#999; margin-top:2px; }
+  .do-item-toggle{
+    background:none;
+    border:none;
+    color:#2E9C5B;
+    font-size:12.5px;
+    cursor:pointer;
+    padding:0;
+    text-decoration:underline;
+    margin-top:8px;
+  }
+  .exec-section{
+    margin-top:12px;
+    padding-top:12px;
+    border-top:1px dashed #eee;
+    display:none;
+    flex-direction:column;
+    gap:10px;
+  }
+  .exec-section.show{ display:flex; }
+  .exec-add-form{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    background:#FAF9F6;
+    border:1px solid #eee;
+    border-radius:10px;
+    padding:12px;
+  }
+  .exec-add-form input,
+  .exec-add-form textarea{
+    font-family:inherit;
+    font-size:13px;
+    border:1px solid #ddd;
+    border-radius:7px;
+    padding:7px 9px;
+  }
+  .exec-add-row{ display:flex; gap:8px; }
+  .exec-add-row > *{ flex:1; }
+  .exec-add-actions{ display:flex; gap:8px; justify-content:flex-end; }
+  .exec-log-item{
+    font-size:12px;
+    color:#555;
+    background:#FAFAFA;
+    border-radius:8px;
+    padding:8px 10px;
+    line-height:1.5;
+  }
+  .exec-log-item .blocked{ color:#C0392B; }
 
   .public-notice{
     position:fixed;
@@ -691,8 +818,20 @@
 </div>
 <div class="section-screen work-screen" id="section-do" style="--sc-color:#2E9C5B">
   <div class="work-inner">
-    <h2>Do</h2>
-    <p class="empty-hint">실행 기록 화면 (준비 중)</p>
+    <div class="work-header">
+      <h2>Do</h2>
+    </div>
+    <div class="todo-toolbar" style="margin-bottom:14px;">
+      <input type="text" id="doSearch" placeholder="할 일 검색">
+      <select id="doFilter">
+        <option value="all">전체 상태</option>
+        <option value="todo">진행 중만</option>
+        <option value="done">완료만</option>
+      </select>
+    </div>
+    <div class="item-list" id="doList">
+      <p class="empty-hint" id="doEmptyHint">불러오는 중…</p>
+    </div>
   </div>
 </div>
 <div class="section-screen work-screen" id="section-see" style="--sc-color:#3C7FC7">
@@ -1046,6 +1185,20 @@
 
   function priorityRank(p){ return p === 'high' ? 0 : p === 'medium' ? 1 : p === 'low' ? 2 : 3; }
 
+  var knownTags = [];
+  function refreshKnownTags(cb){
+    sb.from('todos').select('tags').is('deleted_at', null).then(function(res){
+      if (!res.error && res.data){
+        var set = {};
+        res.data.forEach(function(row){
+          (row.tags || []).forEach(function(t){ set[t] = true; });
+        });
+        knownTags = Object.keys(set).sort(function(a,b){ return a.localeCompare(b, 'ko'); });
+      }
+      if (cb) cb();
+    });
+  }
+
   function buildTodoSection(plan){
     var section = document.createElement('div');
     section.className = 'todo-section';
@@ -1090,10 +1243,13 @@
           '<option value="low">낮음</option>' +
         '</select>' +
       '</div>' +
-      '<div class="todo-add-row">' +
-        '<input type="text" class="t-tags" placeholder="태그(쉼표로 구분)">' +
-        '<input type="number" class="t-est" placeholder="예상 시간(분)" min="0">' +
+      '<div class="tag-chip-container">' +
+        '<div class="tag-input-wrap">' +
+          '<input type="text" class="t-tag-input" placeholder="태그 입력 후 Enter">' +
+          '<div class="tag-suggest-dropdown"></div>' +
+        '</div>' +
       '</div>' +
+      '<input type="number" class="t-est" placeholder="예상 시간(분)" min="0">' +
       '<div class="todo-add-actions">' +
         '<button type="button" class="btn-ghost t-cancel">취소</button>' +
         '<button type="button" class="btn-primary t-save">저장</button>' +
@@ -1189,20 +1345,29 @@
         return true;
       });
 
+      var compare;
+      var sortLabel;
       if (sortVal === 'due_asc'){
-        list.sort(function(a,b){
+        compare = function(a,b){
           if (!a.due_date) return 1;
           if (!b.due_date) return -1;
           return a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0;
-        });
-        sortNote.textContent = '정렬 기준: 마감일 빠른순 (마감일 없는 항목은 뒤로)';
+        };
+        sortLabel = '마감일 빠른순 (마감일 없는 항목은 뒤로)';
       } else if (sortVal === 'priority'){
-        list.sort(function(a,b){ return priorityRank(a.priority) - priorityRank(b.priority); });
-        sortNote.textContent = '정렬 기준: 우선순위 높음 → 낮음';
+        compare = function(a,b){ return priorityRank(a.priority) - priorityRank(b.priority); };
+        sortLabel = '우선순위 높음 → 낮음';
       } else {
-        list.sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
-        sortNote.textContent = '정렬 기준: 최근 생성순';
+        compare = function(a,b){ return new Date(b.created_at) - new Date(a.created_at); };
+        sortLabel = '최근 생성순';
       }
+
+      list.sort(function(a,b){
+        var aDone = a.status === 'done', bDone = b.status === 'done';
+        if (aDone !== bDone) return aDone ? 1 : -1;
+        return compare(a,b);
+      });
+      sortNote.textContent = '정렬 기준: ' + sortLabel + ' (완료한 항목은 항상 맨 아래)';
 
       itemsWrap.innerHTML = '';
       if (!list.length){
@@ -1233,12 +1398,86 @@
         });
     }
 
+    var tagContainer = addForm.querySelector('.tag-chip-container');
+    var tagInputWrap = addForm.querySelector('.tag-input-wrap');
+    var tagInput = addForm.querySelector('.t-tag-input');
+    var tagDropdown = addForm.querySelector('.tag-suggest-dropdown');
+    var selectedTags = [];
+
+    function renderChips(){
+      Array.prototype.slice.call(tagContainer.children).forEach(function(child){
+        if (child !== tagInputWrap) tagContainer.removeChild(child);
+      });
+      selectedTags.forEach(function(tag){
+        var chip = document.createElement('span');
+        chip.className = 'tag-chip';
+        var txt = document.createElement('span');
+        txt.textContent = tag;
+        var rm = document.createElement('button');
+        rm.type = 'button';
+        rm.textContent = '×';
+        rm.addEventListener('click', function(){
+          selectedTags = selectedTags.filter(function(t){ return t !== tag; });
+          renderChips();
+        });
+        chip.appendChild(txt);
+        chip.appendChild(rm);
+        tagContainer.insertBefore(chip, tagInputWrap);
+      });
+    }
+
+    function hideTagDropdown(){ tagDropdown.classList.remove('show'); }
+
+    function commitTag(val){
+      val = (val || '').trim();
+      if (!val) return;
+      var exists = selectedTags.some(function(t){ return t.toLowerCase() === val.toLowerCase(); });
+      if (!exists) selectedTags.push(val);
+      tagInput.value = '';
+      hideTagDropdown();
+      renderChips();
+    }
+
+    tagInput.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ','){
+        e.preventDefault();
+        commitTag(tagInput.value);
+      } else if (e.key === 'Backspace' && !tagInput.value && selectedTags.length){
+        selectedTags.pop();
+        renderChips();
+      }
+    });
+
+    tagInput.addEventListener('input', function(){
+      var q = tagInput.value.trim().toLowerCase();
+      if (!q){ hideTagDropdown(); return; }
+      var matches = knownTags.filter(function(tag){
+        return tag.toLowerCase().indexOf(q) !== -1 &&
+          !selectedTags.some(function(t){ return t.toLowerCase() === tag.toLowerCase(); });
+      }).slice(0, 8);
+      if (!matches.length){ hideTagDropdown(); return; }
+      tagDropdown.innerHTML = '';
+      matches.forEach(function(tag){
+        var opt = document.createElement('div');
+        opt.className = 'tag-suggest-item';
+        opt.textContent = tag;
+        opt.addEventListener('mousedown', function(e){
+          e.preventDefault();
+          commitTag(tag);
+        });
+        tagDropdown.appendChild(opt);
+      });
+      tagDropdown.classList.add('show');
+    });
+    tagInput.addEventListener('blur', function(){ setTimeout(hideTagDropdown, 120); });
+
     searchInput.addEventListener('input', renderList);
     filterSelect.addEventListener('change', renderList);
     sortSelect.addEventListener('change', renderList);
 
     addBtn.addEventListener('click', function(){
       addForm.classList.toggle('show');
+      if (addForm.classList.contains('show')) refreshKnownTags();
     });
     addForm.querySelector('.t-cancel').addEventListener('click', function(){
       addForm.classList.remove('show');
@@ -1246,15 +1485,13 @@
     addForm.querySelector('.t-save').addEventListener('click', function(){
       var titleVal = addForm.querySelector('.t-title').value.trim();
       if (!titleVal){ alert('제목을 입력해주세요.'); return; }
-      var tagsVal = addForm.querySelector('.t-tags').value
-        .split(',').map(function(s){ return s.trim(); }).filter(function(s){ return s; });
       var payload = {
         plan_id: plan.id,
         title: titleVal,
         content: addForm.querySelector('.t-content').value.trim() || null,
         due_date: addForm.querySelector('.t-due').value || null,
         priority: addForm.querySelector('.t-priority').value,
-        tags: tagsVal,
+        tags: selectedTags.slice(),
         estimated_minutes: addForm.querySelector('.t-est').value ? parseInt(addForm.querySelector('.t-est').value, 10) : 0
       };
       sb.from('todos').insert(payload).then(function(res){
@@ -1263,8 +1500,9 @@
         addForm.querySelector('.t-title').value = '';
         addForm.querySelector('.t-content').value = '';
         addForm.querySelector('.t-due').value = '';
-        addForm.querySelector('.t-tags').value = '';
         addForm.querySelector('.t-est').value = '';
+        selectedTags = [];
+        renderChips();
         refresh();
       });
     });
@@ -1396,6 +1634,221 @@
       });
   }
 
+  /* ============================================================
+     Do 화면 (카드3)
+     ============================================================ */
+  var doList = document.getElementById('doList');
+  var doEmptyHint = document.getElementById('doEmptyHint');
+  var doSearch = document.getElementById('doSearch');
+  var doFilter = document.getElementById('doFilter');
+  var doLoaded = false;
+  var doAllTodos = [];
+
+  function renderExecLogItem(log){
+    var el = document.createElement('div');
+    el.className = 'exec-log-item';
+    var start = new Date(log.started_at).toLocaleString('ko-KR');
+    var end = new Date(log.ended_at).toLocaleString('ko-KR');
+    el.textContent = start + ' ~ ' + end + ' · 실제 ' + log.actual_minutes + '분';
+    if (log.blocked_reason){
+      var br = document.createElement('div');
+      br.className = 'blocked';
+      br.textContent = '막힌 이유: ' + log.blocked_reason;
+      el.appendChild(br);
+    }
+    return el;
+  }
+
+  function buildExecSection(todo){
+    var section = document.createElement('div');
+    section.className = 'exec-section';
+
+    var addForm = document.createElement('div');
+    addForm.className = 'exec-add-form';
+    addForm.innerHTML =
+      '<div class="exec-add-row">' +
+        '<label style="font-size:11.5px;color:#666;display:flex;flex-direction:column;gap:4px;">시작 시각<input type="datetime-local" class="e-start"></label>' +
+        '<label style="font-size:11.5px;color:#666;display:flex;flex-direction:column;gap:4px;">끝난 시각<input type="datetime-local" class="e-end"></label>' +
+      '</div>' +
+      '<label style="font-size:11.5px;color:#666;display:flex;flex-direction:column;gap:4px;">실제 걸린 시간(분)<input type="number" class="e-actual" min="0" placeholder="시작·끝 입력하면 자동 계산"></label>' +
+      '<label style="font-size:11.5px;color:#666;display:flex;flex-direction:column;gap:4px;">막혔던 이유(선택)<textarea class="e-blocked" rows="2" placeholder="막힌 게 없으면 비워두세요"></textarea></label>' +
+      '<div class="exec-add-actions">' +
+        '<button type="button" class="btn-primary e-save">기록 저장</button>' +
+      '</div>' +
+      '<p class="form-error e-error"></p>';
+
+    var startInput = addForm.querySelector('.e-start');
+    var endInput = addForm.querySelector('.e-end');
+    var actualInput = addForm.querySelector('.e-actual');
+    var blockedInput = addForm.querySelector('.e-blocked');
+    var saveBtn = addForm.querySelector('.e-save');
+    var errEl = addForm.querySelector('.e-error');
+
+    function autoCalc(){
+      if (startInput.value && endInput.value){
+        var s = new Date(startInput.value);
+        var e = new Date(endInput.value);
+        var diff = Math.round((e - s) / 60000);
+        if (diff >= 0) actualInput.value = diff;
+      }
+    }
+    startInput.addEventListener('change', autoCalc);
+    endInput.addEventListener('change', autoCalc);
+
+    var logsWrap = document.createElement('div');
+    logsWrap.className = 'todo-items';
+    logsWrap.innerHTML = '<p class="empty-hint">불러오는 중…</p>';
+
+    section.appendChild(addForm);
+    section.appendChild(logsWrap);
+
+    var logsLoaded = false;
+
+    function refreshLogs(){
+      logsWrap.innerHTML = '<p class="empty-hint">불러오는 중…</p>';
+      sb.from('execution_logs')
+        .select('*')
+        .eq('todo_id', todo.id)
+        .order('started_at', { ascending:false })
+        .then(function(res){
+          logsLoaded = true;
+          logsWrap.innerHTML = '';
+          if (res.error){
+            var eEl = document.createElement('p');
+            eEl.className = 'empty-hint';
+            eEl.textContent = '불러오기 실패: ' + res.error.message;
+            logsWrap.appendChild(eEl);
+            return;
+          }
+          if (!res.data.length){
+            logsWrap.innerHTML = '<p class="empty-hint">아직 실행 기록이 없어요.</p>';
+            return;
+          }
+          res.data.forEach(function(log){ logsWrap.appendChild(renderExecLogItem(log)); });
+        });
+    }
+
+    saveBtn.addEventListener('click', function(){
+      errEl.textContent = '';
+      if (!startInput.value || !endInput.value){
+        errEl.textContent = '시작 시각과 끝난 시각을 입력해주세요.';
+        return;
+      }
+      var startIso = new Date(startInput.value).toISOString();
+      var endIso = new Date(endInput.value).toISOString();
+      if (endIso < startIso){
+        errEl.textContent = '끝난 시각이 시작 시각보다 빠를 수 없어요.';
+        return;
+      }
+      var actualVal = actualInput.value
+        ? parseInt(actualInput.value, 10)
+        : Math.round((new Date(endIso) - new Date(startIso)) / 60000);
+      var key = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (String(Date.now()) + Math.random());
+      saveBtn.disabled = true;
+      sb.from('execution_logs').insert({
+        todo_id: todo.id,
+        started_at: startIso,
+        ended_at: endIso,
+        actual_minutes: actualVal,
+        blocked_reason: blockedInput.value.trim() || null,
+        idempotency_key: key
+      }).then(function(res){
+        saveBtn.disabled = false;
+        if (res.error){
+          errEl.textContent = '저장 실패: ' + res.error.message;
+          return;
+        }
+        startInput.value = '';
+        endInput.value = '';
+        actualInput.value = '';
+        blockedInput.value = '';
+        refreshLogs();
+      });
+    });
+
+    section._load = function(){ if (!logsLoaded) refreshLogs(); };
+    return section;
+  }
+
+  function renderDoItem(todo){
+    var item = document.createElement('div');
+    item.className = 'do-item';
+
+    var top = document.createElement('div');
+    top.className = 'do-item-top';
+    var titleWrap = document.createElement('div');
+    var title = document.createElement('div');
+    title.className = 'do-item-title';
+    title.textContent = todo.title;
+    var planName = document.createElement('div');
+    planName.className = 'do-item-plan';
+    planName.textContent = (todo.plans && todo.plans.title ? todo.plans.title : '') + ' · ' + (PRIORITY_LABEL[todo.priority] || '-');
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(planName);
+    var badge = document.createElement('div');
+    badge.className = 'plan-card-badge';
+    badge.textContent = todo.status === 'done' ? '완료' : '진행 중';
+    top.appendChild(titleWrap);
+    top.appendChild(badge);
+
+    var toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'do-item-toggle';
+    toggleBtn.textContent = '실행 기록 남기기';
+
+    var execSection = buildExecSection(todo);
+    toggleBtn.addEventListener('click', function(){
+      var willShow = !execSection.classList.contains('show');
+      execSection.classList.toggle('show', willShow);
+      toggleBtn.textContent = willShow ? '실행 기록 접기' : '실행 기록 남기기';
+      if (willShow) execSection._load();
+    });
+
+    item.appendChild(top);
+    item.appendChild(toggleBtn);
+    item.appendChild(execSection);
+    return item;
+  }
+
+  function renderDoList(){
+    var q = doSearch.value.trim().toLowerCase();
+    var filterVal = doFilter.value;
+    var list = doAllTodos.filter(function(t){
+      if (filterVal === 'todo' && t.status !== 'todo') return false;
+      if (filterVal === 'done' && t.status !== 'done') return false;
+      if (q && t.title.toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+    doList.innerHTML = '';
+    if (!list.length){
+      doList.appendChild(doEmptyHint);
+      doEmptyHint.style.display = 'block';
+      doEmptyHint.textContent = '표시할 할 일이 없어요.';
+      return;
+    }
+    list.forEach(function(t){ doList.appendChild(renderDoItem(t)); });
+  }
+
+  function loadDoList(){
+    doEmptyHint.style.display = 'block';
+    doEmptyHint.textContent = '불러오는 중…';
+    sb.from('todos')
+      .select('*, plans(id,title)')
+      .is('deleted_at', null)
+      .order('created_at', { ascending:false })
+      .then(function(res){
+        if (res.error){
+          doEmptyHint.textContent = '불러오기 실패: ' + res.error.message;
+          return;
+        }
+        doAllTodos = res.data;
+        renderDoList();
+      });
+  }
+
+  doSearch.addEventListener('input', renderDoList);
+  doFilter.addEventListener('change', renderDoList);
+
   // Plan 화면에 처음 들어갈 때 한 번 불러오기
   var _origGoToSection = goToSection;
   goToSection = function(name){
@@ -1403,6 +1856,10 @@
     if (name === 'plan' && !plansLoaded){
       plansLoaded = true;
       loadPlans();
+    }
+    if (name === 'do' && !doLoaded){
+      doLoaded = true;
+      loadDoList();
     }
   };
 })();
