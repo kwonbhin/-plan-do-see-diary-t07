@@ -673,6 +673,65 @@
   }
   .exec-log-item .blocked{ color:#C0392B; }
 
+  .see-stats-grid{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:10px;
+    margin-top:12px;
+  }
+  @media (min-width:480px){
+    .see-stats-grid{ grid-template-columns:repeat(3, 1fr); }
+  }
+  .see-stat-box{
+    border:1px solid #eee;
+    border-radius:12px;
+    padding:12px 10px;
+    background:#FAF9F6;
+    cursor:pointer;
+    text-align:left;
+    font-family:inherit;
+  }
+  .see-stat-box:hover{ background:#F1ECDC; }
+  .see-stat-num{ font-size:22px; font-weight:800; color:#3C7FC7; }
+  .see-stat-label{ font-size:11px; color:#888; margin-top:4px; }
+
+  .see-breakdown{
+    display:none;
+    flex-direction:column;
+    gap:6px;
+    margin-top:12px;
+    padding-top:12px;
+    border-top:1px dashed #eee;
+  }
+  .see-breakdown.show{ display:flex; }
+
+  .see-note-section{
+    margin-top:16px;
+    padding-top:14px;
+    border-top:1px solid #eee;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .see-note-label{ font-size:12.5px; font-weight:700; color:#555; }
+  .see-note-input{
+    font-family:inherit;
+    font-size:13px;
+    border:1px solid #ddd;
+    border-radius:8px;
+    padding:8px 10px;
+  }
+  .see-note-row{ display:flex; gap:8px; }
+  .see-note-row select{
+    flex:1;
+    font-family:inherit;
+    font-size:12.5px;
+    border:1px solid #ddd;
+    border-radius:8px;
+    padding:7px 8px;
+  }
+  .see-note-list{ display:flex; flex-direction:column; gap:6px; }
+
   .public-notice{
     position:fixed;
     top:0; left:0; right:0;
@@ -836,8 +895,10 @@
 </div>
 <div class="section-screen work-screen" id="section-see" style="--sc-color:#3C7FC7">
   <div class="work-inner">
-    <h2>See</h2>
-    <p class="empty-hint">돌아보기 화면 (준비 중)</p>
+    <div class="work-header"><h2>See</h2></div>
+    <div class="item-list" id="seeList">
+      <p class="empty-hint" id="seeEmptyHint">불러오는 중…</p>
+    </div>
   </div>
 </div>
 
@@ -1699,8 +1760,8 @@
     logsWrap.className = 'todo-items';
     logsWrap.innerHTML = '<p class="empty-hint">불러오는 중…</p>';
 
-    section.appendChild(addForm);
     section.appendChild(logsWrap);
+    section.appendChild(addForm);
 
     var logsLoaded = false;
 
@@ -1849,6 +1910,219 @@
   doSearch.addEventListener('input', renderDoList);
   doFilter.addEventListener('change', renderDoList);
 
+  /* ============================================================
+     See 화면 (카드4)
+     ============================================================ */
+  var seeList = document.getElementById('seeList');
+  var seeEmptyHint = document.getElementById('seeEmptyHint');
+  var seeLoaded = false;
+
+  function seoulTodayStr(){
+    var now = new Date();
+    var seoul = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+    var pad = function(n){ return String(n).padStart(2, '0'); };
+    return seoul.getFullYear() + '-' + pad(seoul.getMonth() + 1) + '-' + pad(seoul.getDate());
+  }
+
+  function buildSeeCard(plan, allPlans){
+    var card = document.createElement('div');
+    card.className = 'plan-card';
+
+    var top = document.createElement('div');
+    top.className = 'plan-card-top';
+    var title = document.createElement('div');
+    title.className = 'plan-card-title';
+    title.textContent = plan.title;
+    top.appendChild(title);
+    card.appendChild(top);
+
+    var statsGrid = document.createElement('div');
+    statsGrid.className = 'see-stats-grid';
+    statsGrid.innerHTML = '<p class="empty-hint">불러오는 중…</p>';
+    card.appendChild(statsGrid);
+
+    var breakdownWrap = document.createElement('div');
+    breakdownWrap.className = 'see-breakdown';
+    card.appendChild(breakdownWrap);
+
+    var noteSection = document.createElement('div');
+    noteSection.className = 'see-note-section';
+    noteSection.innerHTML =
+      '<div class="see-note-label">돌아보기: 다음 계획으로 넘길 고칠 점 한 줄</div>' +
+      '<textarea class="see-note-input" rows="2" placeholder="예: 예상 시간을 더 여유있게 잡기"></textarea>' +
+      '<div class="see-note-row">' +
+        '<select class="see-note-target"><option value="">다음 계획 선택(선택)</option></select>' +
+        '<button type="button" class="btn-primary see-note-save">저장</button>' +
+      '</div>' +
+      '<div class="see-note-list"></div>';
+    card.appendChild(noteSection);
+
+    var targetSelect = noteSection.querySelector('.see-note-target');
+    allPlans.forEach(function(p){
+      if (p.id === plan.id) return;
+      var opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.title;
+      targetSelect.appendChild(opt);
+    });
+
+    var noteListEl = noteSection.querySelector('.see-note-list');
+    function loadNotes(){
+      sb.from('review_notes')
+        .select('*')
+        .eq('source_plan_id', plan.id)
+        .order('created_at', { ascending:false })
+        .then(function(res){
+          noteListEl.innerHTML = '';
+          if (!res.error && res.data){
+            res.data.forEach(function(n){
+              var item = document.createElement('div');
+              item.className = 'revision-item';
+              var targetPlan = null;
+              allPlans.forEach(function(p){ if (p.id === n.carried_to_plan_id) targetPlan = p; });
+              item.textContent = new Date(n.created_at).toLocaleString('ko-KR') + ' — ' + n.note +
+                (targetPlan ? (' → "' + targetPlan.title + '"로 전달') : '');
+              noteListEl.appendChild(item);
+            });
+          }
+        });
+    }
+    loadNotes();
+
+    noteSection.querySelector('.see-note-save').addEventListener('click', function(){
+      var noteVal = noteSection.querySelector('.see-note-input').value.trim();
+      if (!noteVal){ alert('고칠 점을 입력해주세요.'); return; }
+      sb.from('review_notes').insert({
+        source_plan_id: plan.id,
+        note: noteVal,
+        carried_to_plan_id: targetSelect.value || null
+      }).then(function(res){
+        if (res.error){ alert('저장 실패: ' + res.error.message); return; }
+        noteSection.querySelector('.see-note-input').value = '';
+        loadNotes();
+      });
+    });
+
+    var blockedTodoIds = {};
+    var actualByTodo = {};
+    var currentKey = null;
+
+    function renderBreakdownList(list, mode){
+      breakdownWrap.innerHTML = '';
+      breakdownWrap.classList.add('show');
+      if (!list.length){
+        breakdownWrap.innerHTML = '<p class="empty-hint">해당하는 기록이 없어요.</p>';
+        return;
+      }
+      list.forEach(function(t){
+        var row = document.createElement('div');
+        row.className = 'revision-item';
+        var text = t.title;
+        if (mode === 'overdue') text += ' (마감 ' + t.due_date + ')';
+        if (mode === 'blocked') text += ' — ' + (blockedTodoIds[t.id] || []).join(' / ');
+        if (mode === 'time') text += ' — 예상 ' + (t.estimated_minutes || 0) + '분 · 실제 ' + (actualByTodo[t.id] || 0) + '분';
+        row.textContent = text;
+        breakdownWrap.appendChild(row);
+      });
+    }
+
+    function renderStats(stats, todos){
+      var estSum = stats.estimated_minutes_sum || 0;
+      var actSum = stats.actual_minutes_sum || 0;
+      var diff = actSum - estSum;
+
+      function toggleBreakdown(key){
+        if (currentKey === key && breakdownWrap.classList.contains('show')){
+          breakdownWrap.classList.remove('show');
+          currentKey = null;
+          return;
+        }
+        currentKey = key;
+        var list;
+        if (key === 'plan') list = todos;
+        else if (key === 'done') list = todos.filter(function(t){ return t.status === 'done'; });
+        else if (key === 'overdue'){
+          var today = seoulTodayStr();
+          list = todos.filter(function(t){ return t.status !== 'done' && t.due_date && t.due_date < today; });
+        } else if (key === 'blocked') list = todos.filter(function(t){ return blockedTodoIds[t.id]; });
+        else list = todos;
+        renderBreakdownList(list, key);
+      }
+
+      statsGrid.innerHTML = '';
+      var items = [
+        { key:'plan', label:'계획 수(할 일)', value: String(stats.todo_count || 0) },
+        { key:'done', label:'완료 수', value: String(stats.done_count || 0) },
+        { key:'overdue', label:'지연 수', value: String(stats.overdue_count || 0) },
+        { key:'blocked', label:'막힘 수', value: String(stats.blocked_count || 0) },
+        { key:'time', label:'예상 ' + estSum + '분 · 실제 ' + actSum + '분', value: (diff >= 0 ? '+' : '') + diff + '분' }
+      ];
+      items.forEach(function(it){
+        var box = document.createElement('button');
+        box.type = 'button';
+        box.className = 'see-stat-box';
+        var num = document.createElement('div');
+        num.className = 'see-stat-num';
+        num.textContent = it.value;
+        var lab = document.createElement('div');
+        lab.className = 'see-stat-label';
+        lab.textContent = it.label;
+        box.appendChild(num);
+        box.appendChild(lab);
+        box.addEventListener('click', function(){ toggleBreakdown(it.key); });
+        statsGrid.appendChild(box);
+      });
+    }
+
+    sb.from('v_plan_review').select('*').eq('plan_id', plan.id).maybeSingle().then(function(viewRes){
+      var stats = viewRes.data || {
+        todo_count:0, done_count:0, overdue_count:0, blocked_count:0,
+        estimated_minutes_sum:0, actual_minutes_sum:0
+      };
+      sb.from('todos').select('*').eq('plan_id', plan.id).is('deleted_at', null).then(function(todosRes){
+        var todos = todosRes.data || [];
+        var todoIds = todos.map(function(t){ return t.id; });
+        if (!todoIds.length){
+          renderStats(stats, todos);
+          return;
+        }
+        sb.from('execution_logs').select('*').in('todo_id', todoIds).then(function(logRes){
+          (logRes.data || []).forEach(function(log){
+            actualByTodo[log.todo_id] = (actualByTodo[log.todo_id] || 0) + (log.actual_minutes || 0);
+            if (log.blocked_reason){
+              blockedTodoIds[log.todo_id] = blockedTodoIds[log.todo_id] || [];
+              blockedTodoIds[log.todo_id].push(log.blocked_reason);
+            }
+          });
+          renderStats(stats, todos);
+        });
+      });
+    });
+
+    return card;
+  }
+
+  function loadSee(){
+    seeEmptyHint.style.display = 'block';
+    seeEmptyHint.textContent = '불러오는 중…';
+    sb.from('plans').select('*').order('created_at', { ascending:false }).then(function(res){
+      seeList.innerHTML = '';
+      if (res.error){
+        seeEmptyHint.textContent = '불러오기 실패: ' + res.error.message;
+        seeList.appendChild(seeEmptyHint);
+        return;
+      }
+      if (!res.data.length){
+        seeEmptyHint.textContent = '아직 계획이 없어요.';
+        seeList.appendChild(seeEmptyHint);
+        return;
+      }
+      res.data.forEach(function(plan){
+        seeList.appendChild(buildSeeCard(plan, res.data));
+      });
+    });
+  }
+
   // Plan 화면에 처음 들어갈 때 한 번 불러오기
   var _origGoToSection = goToSection;
   goToSection = function(name){
@@ -1860,6 +2134,10 @@
     if (name === 'do' && !doLoaded){
       doLoaded = true;
       loadDoList();
+    }
+    if (name === 'see' && !seeLoaded){
+      seeLoaded = true;
+      loadSee();
     }
   };
 })();
