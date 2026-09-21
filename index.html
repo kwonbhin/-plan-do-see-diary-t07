@@ -764,12 +764,32 @@
   }
   .home-link.show{ opacity:1; pointer-events:auto; }
   .home-link:hover{ color:#333; }
+
+  .export-link{
+    position:fixed;
+    top:24px; right:24px;
+    z-index:20;
+    font-size:13px;
+    font-weight:700;
+    color:#888;
+    background:none;
+    border:none;
+    cursor:pointer;
+    font-family:inherit;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .3s ease;
+  }
+  .export-link.show{ opacity:1; pointer-events:auto; }
+  .export-link:hover{ color:#333; }
+  .export-link:disabled{ opacity:.5; cursor:default; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 </head>
 <body>
 <div class="public-notice" id="publicNotice">지금은 로그인이 없어 링크를 아는 사람은 누구나 볼 수 있습니다. 남이 봐도 괜찮은 내용만 넣으세요</div>
 <div class="home-link" id="homeLink">← 처음으로</div>
+<button type="button" class="export-link" id="exportBtn">⬇ 내보내기</button>
 
 <div class="stage" id="stage">
 
@@ -1130,6 +1150,7 @@
 
   var publicNotice = document.getElementById('publicNotice');
   var homeLink = document.getElementById('homeLink');
+  var exportBtn = document.getElementById('exportBtn');
 
   function goNext(){
     stage.classList.add('leaving');
@@ -1137,12 +1158,58 @@
       stage.style.display = 'none';
       publicNotice.classList.add('is-hidden');
       homeLink.classList.add('show');
+      exportBtn.classList.add('show');
       showMenu();
     }, 720);
   }
 
   homeLink.addEventListener('click', function(){
     location.reload();
+  });
+
+  exportBtn.addEventListener('click', function(){
+    if (exportBtn.disabled) return;
+    var originalText = exportBtn.textContent;
+    exportBtn.disabled = true;
+    exportBtn.textContent = '내보내는 중…';
+
+    Promise.all([
+      sb.from('plans').select('*'),
+      sb.from('plan_revisions').select('*'),
+      sb.from('todos').select('*'),
+      sb.from('execution_logs').select('*'),
+      sb.from('review_notes').select('*')
+    ]).then(function(results){
+      var names = ['plans', 'plan_revisions', 'todos', 'execution_logs', 'review_notes'];
+      var firstError = null;
+      var payload = { exported_at: new Date().toISOString() };
+      results.forEach(function(res, i){
+        if (res.error && !firstError) firstError = res.error;
+        payload[names[i]] = res.data || [];
+      });
+      if (firstError){
+        alert('내보내기 실패: ' + firstError.message);
+        exportBtn.disabled = false;
+        exportBtn.textContent = originalText;
+        return;
+      }
+      var json = JSON.stringify(payload, null, 2);
+      var blob = new Blob([json], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var pad = function(n){ return String(n).padStart(2, '0'); };
+      var now = new Date();
+      var stamp = now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) +
+        '-' + pad(now.getHours()) + pad(now.getMinutes());
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'pds-diary-export-' + stamp + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+      exportBtn.disabled = false;
+      exportBtn.textContent = originalText;
+    });
   });
 
   startBtn.addEventListener('click', function(e){
@@ -1703,7 +1770,8 @@
   var doSearch = document.getElementById('doSearch');
   var doFilter = document.getElementById('doFilter');
   var doLoaded = false;
-  var doAllTodos = [];
+  var doAllPlans = [];
+  var doTodosByPlan = {};
 
   function renderExecLogItem(log){
     var el = document.createElement('div');
@@ -1837,19 +1905,13 @@
 
     var top = document.createElement('div');
     top.className = 'do-item-top';
-    var titleWrap = document.createElement('div');
     var title = document.createElement('div');
     title.className = 'do-item-title';
     title.textContent = todo.title;
-    var planName = document.createElement('div');
-    planName.className = 'do-item-plan';
-    planName.textContent = (todo.plans && todo.plans.title ? todo.plans.title : '') + ' · ' + (PRIORITY_LABEL[todo.priority] || '-');
-    titleWrap.appendChild(title);
-    titleWrap.appendChild(planName);
     var badge = document.createElement('div');
     badge.className = 'plan-card-badge';
     badge.textContent = todo.status === 'done' ? '완료' : '진행 중';
-    top.appendChild(titleWrap);
+    top.appendChild(title);
     top.appendChild(badge);
 
     var toggleBtn = document.createElement('button');
@@ -1871,40 +1933,101 @@
     return item;
   }
 
+  function renderDoPlanCard(plan, todos, forceOpen){
+    var card = document.createElement('div');
+    card.className = 'plan-card';
+
+    var top = document.createElement('div');
+    top.className = 'plan-card-top';
+    var title = document.createElement('div');
+    title.className = 'plan-card-title';
+    title.textContent = plan.title;
+    var badge = document.createElement('div');
+    badge.className = 'plan-card-badge';
+    badge.textContent = todos.length + '개';
+    top.appendChild(title);
+    top.appendChild(badge);
+    card.appendChild(top);
+
+    var toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'todo-toggle-btn';
+    toggleBtn.textContent = forceOpen ? '할 일 접기' : '할 일 보기';
+    card.appendChild(toggleBtn);
+
+    var itemsWrap = document.createElement('div');
+    itemsWrap.className = 'todo-section';
+    if (forceOpen) itemsWrap.classList.add('show');
+
+    if (!todos.length){
+      itemsWrap.innerHTML = '<p class="empty-hint">해당하는 할 일이 없어요.</p>';
+    } else {
+      todos.forEach(function(t){ itemsWrap.appendChild(renderDoItem(t)); });
+    }
+    card.appendChild(itemsWrap);
+
+    toggleBtn.addEventListener('click', function(){
+      var willShow = !itemsWrap.classList.contains('show');
+      itemsWrap.classList.toggle('show', willShow);
+      toggleBtn.textContent = willShow ? '할 일 접기' : '할 일 보기';
+    });
+
+    return card;
+  }
+
   function renderDoList(){
     var q = doSearch.value.trim().toLowerCase();
     var filterVal = doFilter.value;
-    var list = doAllTodos.filter(function(t){
-      if (filterVal === 'todo' && t.status !== 'todo') return false;
-      if (filterVal === 'done' && t.status !== 'done') return false;
-      if (q && t.title.toLowerCase().indexOf(q) === -1) return false;
-      return true;
-    });
+    var searching = !!q || filterVal !== 'all';
+
     doList.innerHTML = '';
-    if (!list.length){
-      doList.appendChild(doEmptyHint);
+    if (!doAllPlans.length){
       doEmptyHint.style.display = 'block';
-      doEmptyHint.textContent = '표시할 할 일이 없어요.';
+      doEmptyHint.textContent = '아직 계획이 없어요.';
+      doList.appendChild(doEmptyHint);
       return;
     }
-    list.forEach(function(t){ doList.appendChild(renderDoItem(t)); });
+
+    var anyRendered = false;
+    doAllPlans.forEach(function(plan){
+      var todos = (doTodosByPlan[plan.id] || []).filter(function(t){
+        if (filterVal === 'todo' && t.status !== 'todo') return false;
+        if (filterVal === 'done' && t.status !== 'done') return false;
+        if (q && t.title.toLowerCase().indexOf(q) === -1) return false;
+        return true;
+      });
+      if (searching && !todos.length) return;
+      anyRendered = true;
+      doList.appendChild(renderDoPlanCard(plan, todos, searching));
+    });
+
+    if (!anyRendered){
+      doEmptyHint.style.display = 'block';
+      doEmptyHint.textContent = '표시할 할 일이 없어요.';
+      doList.appendChild(doEmptyHint);
+    }
   }
 
   function loadDoList(){
     doEmptyHint.style.display = 'block';
     doEmptyHint.textContent = '불러오는 중…';
-    sb.from('todos')
-      .select('*, plans(id,title)')
-      .is('deleted_at', null)
-      .order('created_at', { ascending:false })
-      .then(function(res){
-        if (res.error){
-          doEmptyHint.textContent = '불러오기 실패: ' + res.error.message;
-          return;
-        }
-        doAllTodos = res.data;
-        renderDoList();
+    Promise.all([
+      sb.from('plans').select('*').order('created_at', { ascending:false }),
+      sb.from('todos').select('*').is('deleted_at', null).order('created_at', { ascending:false })
+    ]).then(function(results){
+      var plansRes = results[0], todosRes = results[1];
+      if (plansRes.error || todosRes.error){
+        doEmptyHint.textContent = '불러오기 실패: ' + ((plansRes.error || todosRes.error).message);
+        return;
+      }
+      doAllPlans = plansRes.data;
+      doTodosByPlan = {};
+      todosRes.data.forEach(function(t){
+        if (!doTodosByPlan[t.plan_id]) doTodosByPlan[t.plan_id] = [];
+        doTodosByPlan[t.plan_id].push(t);
       });
+      renderDoList();
+    });
   }
 
   doSearch.addEventListener('input', renderDoList);
