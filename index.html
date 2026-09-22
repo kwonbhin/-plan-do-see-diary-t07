@@ -783,11 +783,114 @@
   .export-link.show{ opacity:1; pointer-events:auto; }
   .export-link:hover{ color:#333; }
   .export-link:disabled{ opacity:.5; cursor:default; }
+
+  .auth-screen{
+    position:fixed;
+    inset:0;
+    z-index:10000;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:#fff;
+    padding:24px;
+  }
+  .auth-box{
+    width:100%;
+    max-width:340px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  .auth-logo{
+    text-align:center;
+    font-weight:800;
+    font-size:20px;
+    letter-spacing:-0.02em;
+    margin-bottom:8px;
+  }
+  .auth-logo .accent{ color:var(--red); }
+  .auth-tabs{
+    display:flex;
+    border-bottom:1px solid #eee;
+    margin-bottom:4px;
+  }
+  .auth-tab{
+    flex:1;
+    background:none;
+    border:none;
+    padding:10px 0;
+    font-family:inherit;
+    font-size:14px;
+    font-weight:700;
+    color:#aaa;
+    cursor:pointer;
+    border-bottom:2px solid transparent;
+  }
+  .auth-tab.active{ color:var(--ink); border-bottom-color:var(--red); }
+  .auth-input{
+    width:100%;
+    padding:12px 14px;
+    font-size:14px;
+    font-family:inherit;
+    border:1px solid #ddd;
+    border-radius:8px;
+    box-sizing:border-box;
+  }
+  .auth-input:focus{ outline:none; border-color:var(--red); }
+  .auth-submit{ width:100%; margin-top:4px; }
+  .auth-error{ color:var(--red); font-size:12.5px; min-height:1em; line-height:1.4; }
+  .auth-msg{ color:#2E9C5B; font-size:12.5px; min-height:1em; line-height:1.4; }
+  .auth-account-bar{
+    position:fixed;
+    top:24px; right:24px;
+    z-index:20;
+    display:flex;
+    gap:14px;
+    font-size:13px;
+    font-weight:700;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .3s ease;
+  }
+  .auth-account-bar.show{ opacity:1; pointer-events:auto; }
+  .auth-account-bar button{
+    background:none; border:none; font-family:inherit; font-size:13px; font-weight:700;
+    color:#888; cursor:pointer;
+  }
+  .auth-account-bar button:hover{ color:#333; }
+  .auth-account-bar #deleteAccountBtn:hover{ color:var(--red); }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 </head>
 <body>
-<div class="public-notice" id="publicNotice">지금은 로그인이 없어 링크를 아는 사람은 누구나 볼 수 있습니다. 남이 봐도 괜찮은 내용만 넣으세요</div>
+<script>
+  var SUPABASE_URL = 'https://cozgbtxupmmfjfqbfkmo.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_koLCe5kjp8WbrvoSGE75-Q_-UOnx8Al';
+  window.sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+</script>
+
+<div class="auth-screen" id="authScreen">
+  <div class="auth-box">
+    <div class="auth-logo"><span class="accent">PLAN</span> IT. <span class="accent">DO</span> IT. <span class="accent">SEE</span> IT.</div>
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" data-mode="login" id="authTabLogin">로그인</button>
+      <button type="button" class="auth-tab" data-mode="signup" id="authTabSignup">가입</button>
+    </div>
+    <input type="email" id="authEmail" class="auth-input" placeholder="이메일" autocomplete="username">
+    <input type="password" id="authPassword" class="auth-input" placeholder="비밀번호 (6자 이상)" autocomplete="current-password">
+    <button type="button" class="btn-primary auth-submit" id="authSubmitBtn">로그인</button>
+    <div class="auth-error" id="authError"></div>
+    <div class="auth-msg" id="authMsg"></div>
+  </div>
+</div>
+
+<div class="auth-account-bar" id="authAccountBar">
+  <button type="button" id="logoutBtn">로그아웃</button>
+  <button type="button" id="deleteAccountBtn">계정 삭제</button>
+</div>
+
+<div id="appRoot" style="display:none">
+<div class="public-notice" id="publicNotice">로그인한 내 계정에서만 보이는 개인 기록입니다.</div>
 <div class="home-link" id="homeLink">← 처음으로</div>
 <button type="button" class="export-link" id="exportBtn">⬇ 내보내기</button>
 
@@ -1221,9 +1324,7 @@
   /* ============================================================
      Supabase 연결
      ============================================================ */
-  var SUPABASE_URL = 'https://nvudjlntydhimlnrauui.supabase.co';
-  var SUPABASE_KEY = 'sb_publishable_cd-SzWOWg22aSztNvvkEsA_BXIkO_tS';
-  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  var sb = window.sb; // body 맨 위 스크립트에서 이미 만든 Supabase 클라이언트
 
   /* ============================================================
      Plan 화면 (카드1)
@@ -1292,7 +1393,15 @@
     planSaveBtn.disabled = true;
     var id = planFormId.value;
     var req = id
-      ? sb.from('plans').update(payload).eq('id', id)
+      ? sb.rpc('fn_update_plan', {
+          p_plan_id: id,
+          p_title: payload.title,
+          p_period_start: payload.period_start,
+          p_period_end: payload.period_end,
+          p_priority: payload.priority,
+          p_success_criteria: payload.success_criteria,
+          p_estimated_minutes: payload.estimated_minutes
+        })
       : sb.from('plans').insert(payload);
 
     req.then(function(res){
@@ -1459,7 +1568,7 @@
       delBtn.textContent = '삭제';
       delBtn.addEventListener('click', function(){
         if (!confirm('이 할 일을 지울까요?')) return;
-        sb.from('todos').update({ deleted_at: new Date().toISOString() }).eq('id', t.id).then(function(){ refresh(); });
+        sb.rpc('fn_delete_todo', { p_todo_id: t.id }).then(function(){ refresh(); });
       });
       actionsRow.appendChild(delBtn);
 
@@ -1665,7 +1774,15 @@
         estimated_minutes: addForm.querySelector('.t-est').value ? parseInt(addForm.querySelector('.t-est').value, 10) : 0
       };
       var req = editingTodoId
-        ? sb.from('todos').update(payload).eq('id', editingTodoId)
+        ? sb.rpc('fn_update_todo', {
+            p_todo_id: editingTodoId,
+            p_title: payload.title,
+            p_content: payload.content,
+            p_due_date: payload.due_date,
+            p_priority: payload.priority,
+            p_tags: payload.tags,
+            p_estimated_minutes: payload.estimated_minutes
+          })
         : sb.from('todos').insert(payload);
       req.then(function(res){
         if (res.error){ alert('저장 실패: ' + res.error.message); return; }
@@ -2304,6 +2421,120 @@
       loadSee();
     }
   };
+
+  window.__enterApp = goNext;
+})();
+</script>
+
+</div><!-- /appRoot -->
+
+<script>
+(function(){
+  var authScreen = document.getElementById('authScreen');
+  var appRoot = document.getElementById('appRoot');
+  var accountBar = document.getElementById('authAccountBar');
+  var emailInput = document.getElementById('authEmail');
+  var passInput = document.getElementById('authPassword');
+  var submitBtn = document.getElementById('authSubmitBtn');
+  var errorEl = document.getElementById('authError');
+  var msgEl = document.getElementById('authMsg');
+  var publicNotice = document.getElementById('publicNotice');
+  var logoutBtn = document.getElementById('logoutBtn');
+  var deleteAccountBtn = document.getElementById('deleteAccountBtn');
+  var tabs = [document.getElementById('authTabLogin'), document.getElementById('authTabSignup')];
+  var mode = 'login';
+
+  tabs.forEach(function(tab){
+    tab.addEventListener('click', function(){
+      mode = tab.dataset.mode;
+      tabs.forEach(function(t){ t.classList.toggle('active', t === tab); });
+      submitBtn.textContent = mode === 'login' ? '로그인' : '가입하기';
+      errorEl.textContent = '';
+      msgEl.textContent = '';
+    });
+  });
+
+  function showApp(session){
+    authScreen.style.display = 'none';
+    appRoot.style.display = '';
+    accountBar.classList.add('show');
+    if (session && session.user && session.user.email && publicNotice){
+      publicNotice.textContent = session.user.email + ' 로 로그인됨 · 이 기록은 나만 볼 수 있습니다.';
+    }
+    if (window.__enterApp) window.__enterApp();
+  }
+
+  function showAuth(){
+    accountBar.classList.remove('show');
+    appRoot.style.display = 'none';
+    authScreen.style.display = '';
+    emailInput.value = '';
+    passInput.value = '';
+    errorEl.textContent = '';
+    msgEl.textContent = '';
+  }
+
+  submitBtn.addEventListener('click', function(){
+    var email = emailInput.value.trim();
+    var password = passInput.value;
+    errorEl.textContent = '';
+    msgEl.textContent = '';
+    if (!email || !password){
+      errorEl.textContent = '이메일과 비밀번호를 입력해주세요.';
+      return;
+    }
+    submitBtn.disabled = true;
+    var action = mode === 'login'
+      ? window.sb.auth.signInWithPassword({ email: email, password: password })
+      : window.sb.auth.signUp({ email: email, password: password });
+
+    action.then(function(res){
+      submitBtn.disabled = false;
+      if (res.error){
+        errorEl.textContent = res.error.message;
+        return;
+      }
+      if (mode === 'signup' && res.data && !res.data.session){
+        msgEl.textContent = '확인 메일을 보냈습니다. 메일함을 확인한 뒤 로그인해주세요.';
+        return;
+      }
+      showApp(res.data && res.data.session);
+    });
+  });
+
+  [emailInput, passInput].forEach(function(el){
+    el.addEventListener('keydown', function(e){
+      if (e.key === 'Enter') submitBtn.click();
+    });
+  });
+
+  logoutBtn.addEventListener('click', function(){
+    window.sb.auth.signOut().then(function(){ location.reload(); });
+  });
+
+  deleteAccountBtn.addEventListener('click', function(){
+    if (!confirm('계정을 지우면 내 계획·할 일·기록이 모두 함께 지워집니다. 계속할까요?')) return;
+    deleteAccountBtn.disabled = true;
+    window.sb.rpc('fn_delete_my_account').then(function(res){
+      if (res.error){
+        alert('계정 삭제 실패: ' + res.error.message);
+        deleteAccountBtn.disabled = false;
+        return;
+      }
+      window.sb.auth.signOut().then(function(){
+        alert('계정과 자료가 삭제되었습니다.');
+        location.reload();
+      });
+    });
+  });
+
+  window.sb.auth.getSession().then(function(res){
+    if (res.data && res.data.session){
+      showApp(res.data.session);
+    } else {
+      showAuth();
+    }
+  });
 })();
 </script>
 
