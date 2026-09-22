@@ -1141,12 +1141,14 @@
     showButton();
   }
 
-  showIcons(function(){
-    typeLines(function(){
-      completed = true;
-      showButton();
+  function startIntro(){
+    showIcons(function(){
+      typeLines(function(){
+        completed = true;
+        showButton();
+      });
     });
-  });
+  }
 
   var menuScreen = document.getElementById('menuScreen');
   var pppTrack = document.getElementById('pppTrack');
@@ -2425,6 +2427,7 @@
   };
 
   window.__enterApp = goNext;
+  window.__startIntro = startIntro;
 })();
 </script>
 
@@ -2463,7 +2466,8 @@
     if (session && session.user && session.user.email && publicNotice){
       publicNotice.textContent = session.user.email + ' 로 로그인됨 · 이 기록은 나만 볼 수 있습니다.';
     }
-    // 시작 화면(체크박스 배경 · Start 버튼)은 그대로 두고, 사용자가 직접 누르게 둡니다.
+    // 로그인에 성공한 지금부터 시작 화면 애니메이션을 재생합니다.
+    if (window.__startIntro) window.__startIntro();
   }
 
   function showAuth(){
